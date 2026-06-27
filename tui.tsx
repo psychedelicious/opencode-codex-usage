@@ -2,7 +2,7 @@ import { appendFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { RGBA } from "@opentui/core";
-import { createSignal } from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 import { probeQuota, type ProbeSnapshot } from "./lib/codex-usage-probe.js";
 import {
   messageFromParsed,
@@ -56,15 +56,20 @@ type TuiApi = {
   lifecycle: {
     onDispose: (dispose: () => void) => () => void;
   };
+  kv?: {
+    get: <Value = unknown>(key: string, fallback?: Value) => Value;
+    set: (key: string, value: unknown) => void;
+  };
 };
 
 type SidebarState =
   | { state: "idle" }
   | { state: "loading" }
-  | { state: "ready"; parsed: ProbeSnapshot; updatedAt: Date }
-  | { state: "error"; detail: string; updatedAt: Date };
+  | { state: "ready"; parsed: ProbeSnapshot; updatedAt: number }
+  | { state: "error"; detail: string; updatedAt: number };
 
 const TUI_DEBUG_ENV = "OPENCODE_CODEX_USAGE_TUI_DEBUG";
+const SIDEBAR_STATE_KEY = "opencode-codex-usage:sidebar-state";
 const debugLogPath = path.join(os.tmpdir(), "opencode-codex-usage-tui-debug.log");
 
 const debugEnabled = (): boolean => {
@@ -87,15 +92,18 @@ const sidebarRowsFromParsed = (parsed: ProbeSnapshot): string[] => {
   return stripStatusPrefix(messageFromParsed(parsed)).split(" | ");
 };
 
-const formatUpdatedAt = (date: Date): string => {
+const formatUpdatedAt = (updatedAt: number): string => {
   return new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
     minute: "2-digit",
     second: "2-digit",
-  }).format(date);
+  }).format(new Date(updatedAt));
 };
 
 function SidebarView(props: { api: TuiApi; state: () => SidebarState }) {
+  const sidebarState = createMemo(
+    () => props.api.kv?.get<SidebarState>(SIDEBAR_STATE_KEY, props.state()) ?? props.state(),
+  );
   const theme = () => props.api.theme?.current;
   const text = () => theme()?.text;
   const muted = () => theme()?.textMuted;
@@ -112,7 +120,7 @@ function SidebarView(props: { api: TuiApi; state: () => SidebarState }) {
         <b>Codex usage</b>
       </text>
       {(() => {
-        const current = props.state();
+        const current = sidebarState();
         if (current.state === "idle") {
           return <text fg={muted()}>Run /codex-usage to refresh.</text>;
         }
@@ -152,6 +160,11 @@ export const CodexQuotaTuiPlugin = async (api: TuiApi): Promise<void> => {
   const [sidebarState, setSidebarState] = createSignal<SidebarState>({ state: "idle" });
   let running = false;
 
+  const updateSidebarState = (next: SidebarState): void => {
+    setSidebarState(next);
+    api.kv?.set(SIDEBAR_STATE_KEY, next);
+  };
+
   debugLog("tui plugin loaded", {
     hasCommandRegister: typeof api.command?.register,
     hasToast: typeof api.ui?.toast,
@@ -170,13 +183,13 @@ export const CodexQuotaTuiPlugin = async (api: TuiApi): Promise<void> => {
     debugLog("run probe requested", { running });
     if (running) return;
     running = true;
-    setSidebarState({ state: "loading" });
+    updateSidebarState({ state: "loading" });
 
     try {
       const parsed = await probeQuota();
       const probeError = parsed.error?.trim();
       if (probeError) {
-        setSidebarState({ state: "error", detail: probeError, updatedAt: new Date() });
+        updateSidebarState({ state: "error", detail: probeError, updatedAt: Date.now() });
         api.ui.toast({
           title: "Codex quota 🚨",
           message: `🚨 Quota error | ${probeError}`,
@@ -186,11 +199,11 @@ export const CodexQuotaTuiPlugin = async (api: TuiApi): Promise<void> => {
         return;
       }
 
-      setSidebarState({ state: "ready", parsed, updatedAt: new Date() });
+      updateSidebarState({ state: "ready", parsed, updatedAt: Date.now() });
       api.ui.toast(toastBodyFromParsed(parsed, toastDurationMs));
     } catch (error: unknown) {
       const detail = error instanceof Error ? error.message : String(error);
-      setSidebarState({ state: "error", detail, updatedAt: new Date() });
+      updateSidebarState({ state: "error", detail, updatedAt: Date.now() });
       api.ui.toast({
         title: "Codex quota 🚨",
         message: `🚨 Quota error | ${detail}`,
