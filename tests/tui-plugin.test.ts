@@ -18,6 +18,7 @@ type RegisteredCommand = {
 
 test("tui plugin registers codex usage as a slash command", async () => {
   let commands: RegisteredCommand[] = [];
+  let sidebarSlot: ((ctx: unknown, props: { session_id: string }) => unknown) | undefined;
   const disposers: Array<() => void> = [];
   const api = {
     command: {
@@ -26,6 +27,18 @@ test("tui plugin registers codex usage as a slash command", async () => {
         const dispose = () => undefined;
         disposers.push(dispose);
         return dispose;
+      },
+    },
+    slots: {
+      register: (plugin: {
+        order: number;
+        slots: {
+          sidebar_content: (ctx: unknown, props: { session_id: string }) => unknown;
+        };
+      }) => {
+        assert.equal(plugin.order, 350);
+        sidebarSlot = plugin.slots.sidebar_content;
+        return () => undefined;
       },
     },
     lifecycle: {
@@ -52,4 +65,7 @@ test("tui plugin registers codex usage as a slash command", async () => {
     },
   ]);
   assert.equal(typeof commands[0]?.onSelect, "function");
+  assert.equal(typeof sidebarSlot, "function");
+
+  disposers.forEach((dispose) => dispose());
 });
