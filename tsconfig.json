@@ -12,5 +12,5 @@
     "jsxImportSource": "@opentui/solid",
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["*.ts", "*.tsx", "bin/**/*.ts", "lib/**/*.ts"]
+  "include": ["*.ts", "*.tsx", "bin/**/*.ts", "lib/**/*.ts", "lib/**/*.tsx"]
 }
