@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
-import { resolveAuthPath } from "./auth-path.js";
+import { resolveAuthPaths } from "./auth-path.js";
 import {
   durationText,
   extractCompletedUsageFromSse,
@@ -139,10 +139,7 @@ export const resolveProbeRetryCount = (
   return parseRetryCount(env[RETRY_COUNT_ENV], fallback);
 };
 
-export const resolveProbeModel = (
-  env: NodeJS.ProcessEnv = process.env,
-  fallback = "",
-): string => {
+export const resolveProbeModel = (env: NodeJS.ProcessEnv = process.env, fallback = ""): string => {
   const configured = env[MODEL_ENV]?.trim();
   return configured && configured !== "" ? configured : fallback;
 };
@@ -204,7 +201,10 @@ const resolveDefaultProbeModel = async (
 ): Promise<string | ProbeSnapshot> => {
   const supportedModels = await resolveSupportedProbeModels(access, accountId, fetchImpl);
   if ("status" in supportedModels) return supportedModels;
-  return supportedModels[0] ?? toProbeError("error", "no supported Codex models returned for this account", "model");
+  return (
+    supportedModels[0] ??
+    toProbeError("error", "no supported Codex models returned for this account", "model")
+  );
 };
 
 const canonicalizeConfiguredProbeModel = async (
@@ -219,7 +219,9 @@ const canonicalizeConfiguredProbeModel = async (
   if ("status" in supportedModels) return model;
 
   const sorted = [...supportedModels].sort((left, right) => right.length - left.length);
-  return sorted.find((supported) => model === supported || model.startsWith(`${supported}-`)) ?? model;
+  return (
+    sorted.find((supported) => model === supported || model.startsWith(`${supported}-`)) ?? model
+  );
 };
 
 const parseProbeErrorDetail = (raw: string): string => {
@@ -391,25 +393,27 @@ const loadCredentials = async (
     return { access, accountId: options.credentials.accountId ?? "" };
   }
 
-  let access = "";
-  let accountId = "";
+  let failureDetail = "missing auth file";
 
-  try {
-    const authPath = resolveAuthPath();
-    const authRaw = await readFile(authPath, "utf8");
-    const auth = parseAuthFile(authRaw);
-    access = auth.openai?.access ?? "";
-    accountId = auth.openai?.accountId ?? "";
+  for (const authPath of resolveAuthPaths()) {
+    try {
+      const authRaw = await readFile(authPath, "utf8");
+      const auth = parseAuthFile(authRaw);
+      const access = auth.openai?.access ?? "";
+      const accountId = auth.openai?.accountId ?? "";
 
-    if (access.trim() === "") {
-      return toProbeError("error", "missing access token", "auth");
+      if (access.trim() === "") {
+        failureDetail = "missing access token";
+        continue;
+      }
+
+      return { access, accountId };
+    } catch (error) {
+      failureDetail = errorMessage(error);
     }
-  } catch (error) {
-    const detail = errorMessage(error);
-    return toProbeError("error", detail.slice(0, 120), "auth");
   }
 
-  return { access, accountId };
+  return toProbeError("error", failureDetail.slice(0, 120), "auth");
 };
 
 const runProbeAttempt = async (
