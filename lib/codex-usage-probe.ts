@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
-import { resolveAuthPath } from "./auth-path.js";
+import { resolveAuthPaths } from "./auth-path.js";
 import {
   durationText,
   extractCompletedUsageFromSse,
@@ -37,6 +37,10 @@ const parseAuthFile = (raw: string): AuthFile => {
 
 const errorMessage = (error: unknown): string => {
   return error instanceof Error ? error.message : String(error);
+};
+
+const isMissingFileError = (error: unknown): boolean => {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 };
 
 const CODEX_URL = "https://chatgpt.com/backend-api/codex/responses";
@@ -391,25 +395,29 @@ const loadCredentials = async (
     return { access, accountId: options.credentials.accountId ?? "" };
   }
 
-  let access = "";
-  let accountId = "";
+  let failureDetail = "missing auth file";
 
-  try {
-    const authPath = resolveAuthPath();
-    const authRaw = await readFile(authPath, "utf8");
-    const auth = parseAuthFile(authRaw);
-    access = auth.openai?.access ?? "";
-    accountId = auth.openai?.accountId ?? "";
+  for (const authPath of resolveAuthPaths()) {
+    try {
+      const authRaw = await readFile(authPath, "utf8");
+      const auth = parseAuthFile(authRaw);
+      const access = auth.openai?.access ?? "";
+      const accountId = auth.openai?.accountId ?? "";
 
-    if (access.trim() === "") {
-      return toProbeError("error", "missing access token", "auth");
+      if (access.trim() === "") {
+        return toProbeError("error", `missing access token in ${authPath}`.slice(0, 120), "auth");
+      }
+
+      return { access, accountId };
+    } catch (error) {
+      failureDetail = errorMessage(error);
+      if (!isMissingFileError(error)) {
+        return toProbeError("error", failureDetail.slice(0, 120), "auth");
+      }
     }
-  } catch (error) {
-    const detail = errorMessage(error);
-    return toProbeError("error", detail.slice(0, 120), "auth");
   }
 
-  return { access, accountId };
+  return toProbeError("error", failureDetail.slice(0, 120), "auth");
 };
 
 const runProbeAttempt = async (
