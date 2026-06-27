@@ -2,7 +2,7 @@
 
 Small OpenCode plugin for Codex quota visibility.
 
-Instead of checking the web dashboard, you get quota toasts directly in OpenCode.
+Instead of checking the web dashboard, you get quota toasts and sidebar visibility directly in OpenCode.
 
 ## Screenshot
 
@@ -11,6 +11,7 @@ Instead of checking the web dashboard, you get quota toasts directly in OpenCode
 ## What it does
 
 - Shows Codex quota status as OpenCode toasts.
+- Adds a Codex usage view to the OpenCode sidebar, refreshed by polling and manual checks.
 - Runs a background check on startup and every 10 minutes.
 - Keeps noise low: background checks only notify when quota reaches the configured threshold (`warn` by default, so `warn`/`critical`/`error`).
 - Includes JSON output mode for scripts and debugging.
@@ -99,7 +100,8 @@ The installer updates both OpenCode's server plugin config and TUI plugin config
 ## CLI commands
 
 The TUI plugin registers a `/codex-usage` slash command.
-This means quota checks run locally and the command shows a toast without an assistant turn.
+This means quota checks run locally and the command shows a toast and refreshes the sidebar without an assistant turn.
+You can also click the `Codex usage` sidebar heading to refresh it.
 
 You can still run `opencode-codex-usage` directly when you want an immediate quota refresh from a shell.
 
@@ -140,7 +142,9 @@ npm unlink -g opencode-codex-usage
 
 - Background checks run on startup and on interval.
 - Background checks trigger a toast only when status meets the configured threshold and gets worse than the previous background state.
-- Manual runs can trigger an immediate refresh from any folder.
+- Background checks update the Codex usage sidebar even when they do not show a toast.
+- Manual TUI runs show a toast and refresh the Codex usage sidebar.
+- Manual CLI runs can trigger an immediate refresh from any folder.
 - Window labels use API-provided window minutes when available (for example `5h window`, `7d window`), otherwise fallback to `window A` / `window B`.
 
 ## Configuration

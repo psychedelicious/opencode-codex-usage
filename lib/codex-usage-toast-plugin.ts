@@ -3,6 +3,7 @@ import path from "node:path";
 import { probeQuota, type ProbeSnapshot } from "./codex-usage-probe.js";
 import { statusState } from "./quota-format.js";
 import { resolveSignalPath } from "./codex-usage-signal.js";
+import { usageStateFromError, usageStateFromParsed, writeUsageState } from "./codex-usage-state.js";
 import { z } from "zod";
 
 const DEFAULT_POLL_MS = 10 * 60 * 1000;
@@ -451,6 +452,15 @@ export const CodexQuotaToastPlugin = ({ client, worktree }: PluginContext) => {
     void logPluginError("plugin async failure", { scope, detail, worktree });
   };
 
+  const saveUsageState = async (state: ReturnType<typeof usageStateFromParsed>): Promise<void> => {
+    try {
+      await writeUsageState(state);
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? error.message : String(error);
+      await logPluginError("usage state write failed", { detail, worktree });
+    }
+  };
+
   const triggerStartupProbe = (): void => {
     runProbeSafely({ force: forceStartupToast, showFailureToast: false });
   };
@@ -477,6 +487,7 @@ export const CodexQuotaToastPlugin = ({ client, worktree }: PluginContext) => {
 
     try {
       const parsed = await probeQuota({ model: sessionModel });
+      await saveUsageState(usageStateFromParsed(parsed));
       const probeError = parsed.error?.trim();
       if (probeError) {
         await logPluginError("quota probe failed", { detail: probeError, worktree });
@@ -514,6 +525,7 @@ export const CodexQuotaToastPlugin = ({ client, worktree }: PluginContext) => {
       return { failed: false };
     } catch (error: unknown) {
       const detail = error instanceof Error ? error.message : String(error);
+      await saveUsageState(usageStateFromError(error));
       await logPluginError("quota probe failed", { detail, worktree });
       if (showFailureToast) {
         await client.tui.showToast({
